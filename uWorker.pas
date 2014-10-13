@@ -52,6 +52,7 @@ type
     FName : string;
     FOwner : TWorkerMgr;
     FTag : Integer;
+    FAutoFree : LongBool;
 
     FProc : TWorkerProc;
     FParam : TObject;
@@ -193,8 +194,8 @@ type
     constructor Create( Name : string = 'WorkerMgr' );
     destructor Destroy; override;
 
-    function AllocWorker( Name : string = 'Worker'; Tag : Integer = 0 )
-      : TWorker;
+    function AllocWorker( AutoFree : LongBool; Name : string = 'Worker';
+      Tag : Integer = 0 ) : TWorker;
     procedure FreeWorker( Worker : TWorker );
   end;
 
@@ -416,13 +417,27 @@ begin
 end;
 
 function TWorker.IsCancelPending : LongBool;
+var
+  NeedCancel : LongBool;
 begin
   Result := FCancelPending;
+  if Result then
+    Exit;
+  NeedCancel := FALSE;
+  Self.NeedCancel( @NeedCancel );
+  Result := NeedCancel;
 end;
 
 function TWorker.IsSuspendPending : LongBool;
+var
+  NeedSuspend : LongBool;
 begin
   Result := FSuspendPending;
+  if Result then
+    Exit;
+  NeedSuspend := FALSE;
+  Self.NeedSuspend( @NeedSuspend );
+  Result := NeedSuspend;
 end;
 
 destructor TWorker.Destroy;
@@ -458,7 +473,8 @@ begin
   if Assigned( FOnFinish ) then
     FOnFinish( Self, Status );
 
-  FOwner.FreeWorker( Self );
+  if Self.FAutoFree then
+    FOwner.FreeWorker( Self );
 end;
 
 procedure TWorker.DoResumed;
@@ -505,7 +521,8 @@ begin
   FThreadWindow := AllocateHWnd( ThreadWndMethod );
 end;
 
-function TWorkerMgr.AllocWorker( Name : string; Tag : Integer ) : TWorker;
+function TWorkerMgr.AllocWorker( AutoFree : LongBool; Name : string;
+  Tag : Integer ) : TWorker;
 var
   I : Integer;
   FreeWorkerFound : LongBool;
@@ -535,6 +552,8 @@ begin
 
   Result.Name := name;
   Result.Tag := Tag;
+  Result.FAutoFree := AutoFree;
+
   Result.OnStart := nil;
   Result.OnSuspend := nil;
   Result.OnResume := nil;

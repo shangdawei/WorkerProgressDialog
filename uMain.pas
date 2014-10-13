@@ -62,9 +62,6 @@ implementation
 
 {$R *.DFM}
 
-uses
-  uTest;
-
 const
   ThreadCount = 32;
 
@@ -102,7 +99,6 @@ var
   PrimesFound : integer;
   NumbersToCheck : integer;
   Progress : integer;
-  NeedCancel : LongBool;
 begin
   NumbersToCheck := integer( Data );
   PrimesFound := 0;
@@ -113,9 +109,7 @@ begin
     if Sender.IsSuspendPending then
       Sender.AcceptSuspend;
 
-    NeedCancel := FALSE;
-    Sender.NeedCancel( @NeedCancel );
-    if Sender.IsCancelPending or NeedCancel then
+    if Sender.IsCancelPending then
     begin
       Sender.AcceptCancel( );
       Exit( wsCanceled );
@@ -218,7 +212,7 @@ begin
   Self.Update;
 
   MaxNum := StrToInt( edtMaxNum.Text );
-  Worker := WorkerMgr.AllocWorker( 'PrimeWork' );
+  Worker := WorkerMgr.AllocWorker( True, 'PrimeWork' );
   Worker.OnFeedbackProgress := PrimeWorkProgress;
   Worker.OnFeedbackData := PrimeWorkFeedback;
   Worker.OnStart := PrimeWorkStarted;
@@ -252,7 +246,8 @@ begin
 
   for I := 0 to ThreadNum - 1 do
   begin
-    Workers[ I ] := WorkerMgr.AllocWorker( 'PrimeWork ' + IntToStr( I ), I );
+    Workers[ I ] := WorkerMgr.AllocWorker( True,
+      'PrimeWork ' + IntToStr( I ), I );
     Workers[ I ].OnFeedbackProgress := PrimeWorkProgress8X;
     Workers[ I ].OnFeedbackData := PrimeWorkFeedback;
     Workers[ I ].OnFinish := PrimeWorkFinished8X;
