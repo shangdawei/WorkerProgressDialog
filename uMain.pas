@@ -106,14 +106,8 @@ begin
   // Finding prime numbers using a very low tech approach
   for N := 2 to NumbersToCheck - 1 do
   begin
-    if Sender.IsSuspendPending then
-      Sender.AcceptSuspend;
-
     if Sender.IsCancelPending then
-    begin
-      Sender.AcceptCancel( );
       Exit( wsCanceled );
-    end;
 
     IsPrime := True;
     for M := 2 to N - 1 do

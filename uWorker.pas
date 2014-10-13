@@ -109,10 +109,6 @@ type
     procedure Cancel( );
 
     // For Worker Thread
-    procedure AcceptSuspend( );
-    procedure AcceptCancel( );
-
-    function IsSuspendPending : LongBool;
     function IsCancelPending : LongBool;
 
     procedure Started( );
@@ -274,24 +270,6 @@ begin
     NativeUInt( Status ) )
 end;
 
-procedure TWorker.AcceptCancel;
-begin
-  FCancelPending := FALSE;
-end;
-
-procedure TWorker.AcceptSuspend;
-begin
-  FSuspendPending := FALSE;
-  FSuspended := TRUE;
-  Suspended( );
-
-  WaitForSingleObject( FEvents[ weResume ], INFINITE );
-  ResetEvent( FEvents[ weResume ] );
-
-  FSuspended := FALSE;
-  Resumed( );
-end;
-
 procedure TWorker.Suspend;
 begin
   if FWorking and not FSuspended then
@@ -419,25 +397,39 @@ end;
 function TWorker.IsCancelPending : LongBool;
 var
   NeedCancel : LongBool;
-begin
-  Result := FCancelPending;
-  if Result then
-    Exit;
-  NeedCancel := FALSE;
-  Self.NeedCancel( @NeedCancel );
-  Result := NeedCancel;
-end;
-
-function TWorker.IsSuspendPending : LongBool;
-var
   NeedSuspend : LongBool;
 begin
   Result := FSuspendPending;
+  if not Result then
+  begin
+    NeedSuspend := FALSE;
+    Self.NeedSuspend( @NeedSuspend );
+    Result := NeedSuspend;
+  end;
+
   if Result then
-    Exit;
-  NeedSuspend := FALSE;
-  Self.NeedSuspend( @NeedSuspend );
-  Result := NeedSuspend;
+  begin
+    FSuspendPending := FALSE;
+    FSuspended := TRUE;
+    Suspended( );
+
+    WaitForSingleObject( FEvents[ weResume ], INFINITE );
+    ResetEvent( FEvents[ weResume ] );
+
+    FSuspended := FALSE;
+    Resumed( );
+  end;
+
+  Result := FCancelPending;
+  if not Result then
+  begin
+    NeedCancel := FALSE;
+    Self.NeedCancel( @NeedCancel );
+    Result := NeedCancel;
+  end;
+
+  if Result then
+    FCancelPending := FALSE;
 end;
 
 destructor TWorker.Destroy;

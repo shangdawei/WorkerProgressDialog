@@ -3,7 +3,7 @@ object Form1: TForm1
   Top = 0
   Caption = 'Form1'
   ClientHeight = 606
-  ClientWidth = 222
+  ClientWidth = 213
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -97,42 +97,42 @@ object Form1: TForm1
   end
   object ProgressBar4: TProgressBar
     Left = 8
-    Top = 295
+    Top = 263
     Width = 195
     Height = 20
     TabOrder = 9
   end
   object ProgressBar5: TProgressBar
     Left = 8
-    Top = 263
+    Top = 295
     Width = 195
     Height = 20
     TabOrder = 10
   end
   object ProgressBar6: TProgressBar
     Left = 8
-    Top = 423
+    Top = 327
     Width = 195
     Height = 20
     TabOrder = 11
   end
   object ProgressBar7: TProgressBar
     Left = 8
-    Top = 391
+    Top = 359
     Width = 195
     Height = 20
     TabOrder = 12
   end
   object ProgressBar8: TProgressBar
     Left = 8
-    Top = 359
+    Top = 391
     Width = 195
     Height = 20
     TabOrder = 13
   end
   object ProgressBar9: TProgressBar
     Left = 8
-    Top = 327
+    Top = 423
     Width = 195
     Height = 20
     TabOrder = 14
