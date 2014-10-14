@@ -2,7 +2,7 @@ program WorkerDemo;
 
 uses
   Vcl.Forms,
-  uMain in 'uMain.pas' {Form1},
+  uMain in 'uMain.pas' {frmMain},
   uWorker in 'uWorker.pas';
 
 {$R *.res}
@@ -10,6 +10,6 @@ uses
 begin
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
-  Application.CreateForm(TForm1, Form1);
+  Application.CreateForm(TfrmMain, frmMain);
   Application.Run;
 end.

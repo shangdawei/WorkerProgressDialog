@@ -7,7 +7,7 @@ uses
   StdCtrls, uWorker, Vcl.ComCtrls, Vcl.ExtCtrls;
 
 type
-  TForm1 = class( TForm )
+  TfrmMain = class( TForm )
     btnStart : TButton;
     btnCancel : TButton;
     edtMaxNum : TEdit;
@@ -27,7 +27,7 @@ type
     edtThreadNum : TEdit;
     Timer1 : TTimer;
     Edit1 : TEdit;
-    Edit2 : TEdit;
+    chkUpdate : TCheckBox;
     procedure FormCreate( Sender : TObject );
     procedure FormDestroy( Sender : TObject );
     procedure btnStartClick( Sender : TObject );
@@ -41,7 +41,7 @@ type
 
     procedure PrimeWorkNeedCancel( Sender : TWorker; NeedCancel : PLongBool );
 
-    procedure PrimeWorkFeedback( Sender : TWorker; FeedValue : TObject );
+    procedure PrimeWorkData( Sender : TWorker; FeedValue : TObject );
     procedure PrimeWorkProgress( Sender : TWorker; Progress : integer );
 
     procedure PrimeWorkFinished( Sender : TWorker;
@@ -56,7 +56,7 @@ type
   end;
 
 var
-  Form1 : TForm1;
+  frmMain : TfrmMain;
 
 implementation
 
@@ -71,7 +71,7 @@ var
   Workers : array [ 0 .. ThreadCount - 1 ] of TWorker;
   pbs : array [ 0 .. ThreadCount - 1 ] of TProgressBar;
 
-procedure TForm1.FormCreate( Sender : TObject );
+procedure TfrmMain.FormCreate( Sender : TObject );
 begin
   TThread.NameThreadForDebugging( 'Main' );
 
@@ -86,13 +86,13 @@ begin
   pbs[ 7 ] := ProgressBar9;
 end;
 
-procedure TForm1.FormDestroy( Sender : TObject );
+procedure TfrmMain.FormDestroy( Sender : TObject );
 begin
   if Assigned( WorkerMgr ) then
     WorkerMgr.Free;
 end;
 
-function TForm1.PrimeWork( Sender : TWorker; Data : TObject ) : TWorkerStatus;
+function TfrmMain.PrimeWork( Sender : TWorker; Data : TObject ) : TWorkerStatus;
 var
   N, M : integer;
   IsPrime : Boolean;
@@ -122,18 +122,18 @@ begin
     if IsPrime then
     begin
       Inc( PrimesFound );
-      Sender.FeedbackData( TObject( N ) );
+      Sender.Data( TObject( N ) );
     end;
 
     Progress := MulDiv( N, 100, NumbersToCheck );
-    Sender.FeedbackProgress( Progress );
+    Sender.Progress( Progress );
 
   end;
 
   Exit( wsSuccessed );
 end;
 
-procedure TForm1.PrimeWorkFinished( Sender : TWorker;
+procedure TfrmMain.PrimeWorkFinished( Sender : TWorker;
   FinishedStatus : TWorkerStatus );
 begin
   Label1.Caption := WorkerStatusText[ FinishedStatus ];
@@ -143,24 +143,29 @@ begin
   Self.Update;
 end;
 
-procedure TForm1.PrimeWorkFinished8X( Sender : TWorker;
+procedure TfrmMain.PrimeWorkFinished8X( Sender : TWorker;
   FinishedStatus : TWorkerStatus );
 begin
+  if Sender.Tag < 8 then
+  begin
+    pbs[ Sender.Tag ].Position := 100;
+    pbs[ Sender.Tag ].Update;
+  end;
 end;
 
-procedure TForm1.PrimeWorkFeedback( Sender : TWorker; FeedValue : TObject );
+procedure TfrmMain.PrimeWorkData( Sender : TWorker; FeedValue : TObject );
 begin
   edtPrime.Text := IntToStr( integer( FeedValue ) );
   edtPrime.Update;
 end;
 
-procedure TForm1.PrimeWorkProgress( Sender : TWorker; Progress : integer );
+procedure TfrmMain.PrimeWorkProgress( Sender : TWorker; Progress : integer );
 begin
   ProgressBar1.Position := Progress;
   ProgressBar1.Update;
 end;
 
-procedure TForm1.PrimeWorkProgress8X( Sender : TWorker; Progress : integer );
+procedure TfrmMain.PrimeWorkProgress8X( Sender : TWorker; Progress : integer );
 begin
   if Sender.Tag < 8 then
   begin
@@ -170,13 +175,13 @@ begin
   Self.Update;
 end;
 
-procedure TForm1.PrimeWorkNeedCancel( Sender : TWorker;
+procedure TfrmMain.PrimeWorkNeedCancel( Sender : TWorker;
   NeedCancel : PLongBool );
 begin
   NeedCancel^ := FALSE;
 end;
 
-procedure TForm1.PrimeWorkStarted( Sender : TWorker );
+procedure TfrmMain.PrimeWorkStarted( Sender : TWorker );
 begin
   btnStart.Enabled := FALSE;
   btnCancel.Enabled := True;
@@ -185,20 +190,20 @@ end;
 var
   globalTimer : integer;
 
-procedure TForm1.Timer1Timer( Sender : TObject );
+procedure TfrmMain.Timer1Timer( Sender : TObject );
 begin
   Inc( globalTimer );
   Edit1.Text := IntToStr( globalTimer );
 
 end;
 
-procedure TForm1.btnCancelClick( Sender : TObject );
+procedure TfrmMain.btnCancelClick( Sender : TObject );
 begin
   if Assigned( Worker ) then
     Worker.Cancel;
 end;
 
-procedure TForm1.btnStartClick( Sender : TObject );
+procedure TfrmMain.btnStartClick( Sender : TObject );
 var
   MaxNum : integer;
 begin
@@ -207,15 +212,15 @@ begin
 
   MaxNum := StrToInt( edtMaxNum.Text );
   Worker := WorkerMgr.AllocWorker( True, 'PrimeWork' );
-  Worker.OnFeedbackProgress := PrimeWorkProgress;
-  Worker.OnFeedbackData := PrimeWorkFeedback;
+  Worker.OnProgress := PrimeWorkProgress;
+  Worker.OnData := PrimeWorkData;
   Worker.OnStart := PrimeWorkStarted;
-  Worker.OnFinish := PrimeWorkFinished;
+  Worker.OnDone := PrimeWorkFinished;
   Worker.OnNeedCancel := PrimeWorkNeedCancel;
   Worker.Start( PrimeWork, TObject( MaxNum ) );
 end;
 
-procedure TForm1.btnCancelAllClick( Sender : TObject );
+procedure TfrmMain.btnCancelAllClick( Sender : TObject );
 var
   I : integer;
   ThreadNum : integer;
@@ -228,7 +233,7 @@ begin
   end;
 end;
 
-procedure TForm1.btnStartAllClick( Sender : TObject );
+procedure TfrmMain.btnStartAllClick( Sender : TObject );
 var
   ThreadNum : integer;
   MaxNum : integer;
@@ -240,11 +245,15 @@ begin
 
   for I := 0 to ThreadNum - 1 do
   begin
+    pbs[ I ].Position := 0;
     Workers[ I ] := WorkerMgr.AllocWorker( True,
       'PrimeWork ' + IntToStr( I ), I );
-    Workers[ I ].OnFeedbackProgress := PrimeWorkProgress8X;
-    Workers[ I ].OnFeedbackData := PrimeWorkFeedback;
-    Workers[ I ].OnFinish := PrimeWorkFinished8X;
+    if chkUpdate.Checked then
+    begin
+      Workers[ I ].OnProgress := PrimeWorkProgress8X;
+      Workers[ I ].OnData := PrimeWorkData;
+    end;
+    Workers[ I ].OnDone := PrimeWorkFinished8X;
     Workers[ I ].Start( PrimeWork, TObject( MaxNum ) );
   end;
 

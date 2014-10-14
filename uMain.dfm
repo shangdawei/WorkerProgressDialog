@@ -1,8 +1,8 @@
-object Form1: TForm1
+object frmMain: TfrmMain
   Left = 0
   Top = 0
-  Caption = 'Form1'
-  ClientHeight = 606
+  Caption = 'frmMain'
+  ClientHeight = 602
   ClientWidth = 213
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -65,7 +65,7 @@ object Form1: TForm1
   end
   object btnStartAll: TButton
     Left = 8
-    Top = 494
+    Top = 534
     Width = 75
     Height = 25
     Caption = 'Start All'
@@ -74,7 +74,7 @@ object Form1: TForm1
   end
   object btnCancelAll: TButton
     Left = 128
-    Top = 494
+    Top = 534
     Width = 75
     Height = 25
     Caption = 'Cancel All'
@@ -153,13 +153,13 @@ object Form1: TForm1
     TabOrder = 16
     Text = 'Edit1'
   end
-  object Edit2: TEdit
+  object chkUpdate: TCheckBox
     Left = 8
-    Top = 541
-    Width = 195
-    Height = 21
+    Top = 504
+    Width = 161
+    Height = 17
+    Caption = 'Update ProgrebbBar'
     TabOrder = 17
-    Text = 'Edit1'
   end
   object Timer1: TTimer
     OnTimer = Timer1Timer

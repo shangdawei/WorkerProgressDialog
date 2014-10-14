@@ -34,12 +34,12 @@ type
   TWorkerProc = function( Worker : TWorker; Param : TObject )
     : TWorkerStatus of object;
 
-  TFeedbackDataEvent = procedure( Sender : TWorker; Data : TObject ) of object;
+  TWorkerDataEvent = procedure( Sender : TWorker; Data : TObject ) of object;
 
-  TFeedbackProgressEvent = procedure( Sender : TWorker; Progress : Integer )
+  TWorkerProgressEvent = procedure( Sender : TWorker; Progress : Integer )
     of object;
 
-  TWorkerFinishEvent = procedure( Sender : TWorker; Status : TWorkerStatus )
+  TWorkerDoneEvent = procedure( Sender : TWorker; Status : TWorkerStatus )
     of object;
 
   TCallbackEvent = procedure( Sender : TWorker; Param : PLongBool ) of object;
@@ -50,9 +50,9 @@ type
 
   TWorker = class( TThread )
     FName : string;
-    FOwner : TWorkerMgr;
     FTag : Integer;
-    FAutoFree : LongBool;
+    FOwner : TWorkerMgr;
+    FFreeOnDone : LongBool;
 
     FProc : TWorkerProc;
     FParam : TObject;
@@ -69,14 +69,13 @@ type
     FOnNeedCancel : TCallbackEvent;
     FOnNeedSuspend : TCallbackEvent;
 
-    FOnFeedbackData : TFeedbackDataEvent;
-    FOnFeedbackProgress : TFeedbackProgressEvent;
-
-    FOnFinish : TWorkerFinishEvent;
+    FOnData : TWorkerDataEvent;
+    FOnProgress : TWorkerProgressEvent;
 
     FOnStart : TWorkerStateEvent;
     FOnSuspend : TWorkerStateEvent;
     FOnResume : TWorkerStateEvent;
+    FOnDone : TWorkerDoneEvent;
 
     // Start, Exit, Resume, MgrResume
     FEvents : array [ weTerminate .. weMgrResume ] of THandle;
@@ -86,13 +85,13 @@ type
   protected
     procedure Execute; override;
 
-    procedure DoFeedbackData( Data : TObject );
-    procedure DoFeedbackProgress( Progress : Integer );
+    procedure DoData( Data : TObject );
+    procedure DoProgress( Progress : Integer );
 
     procedure DoStarted( );
     procedure DoSuspended( );
     procedure DoResumed( );
-    procedure DoFinished( Status : TWorkerStatus );
+    procedure DoDone( Status : TWorkerStatus );
 
     procedure DoNeedCancel( Cancel : PLongBool );
     procedure DoNeedSuspend( Suspend : PLongBool );
@@ -114,13 +113,13 @@ type
     procedure Started( );
     procedure Resumed( );
     procedure Suspended( );
-    procedure Finished( Status : TWorkerStatus );
+    procedure Done( Status : TWorkerStatus );
 
     procedure NeedCancel( Cancel : PLongBool );
     procedure NeedSuspend( Suspend : PLongBool );
 
-    procedure FeedbackProgress( Perent : Integer );
-    procedure FeedbackData( Data : TObject );
+    procedure Progress( Perent : Integer );
+    procedure Data( Data : TObject );
 
     // For Main Thread
     property name : string read FName write FName;
@@ -129,12 +128,11 @@ type
     property OnStart : TWorkerStateEvent read FOnStart write FOnStart;
     property OnSuspend : TWorkerStateEvent read FOnSuspend write FOnSuspend;
     property OnResume : TWorkerStateEvent read FOnResume write FOnResume;
-    property OnFinish : TWorkerFinishEvent read FOnFinish write FOnFinish;
+    property OnDone : TWorkerDoneEvent read FOnDone write FOnDone;
 
-    property OnFeedbackProgress : TFeedbackProgressEvent
-      read FOnFeedbackProgress write FOnFeedbackProgress;
-    property OnFeedbackData : TFeedbackDataEvent read FOnFeedbackData
-      write FOnFeedbackData;
+    property OnProgress : TWorkerProgressEvent read FOnProgress
+      write FOnProgress;
+    property OnData : TWorkerDataEvent read FOnData write FOnData;
 
     property OnNeedCancel : TCallbackEvent read FOnNeedCancel
       write FOnNeedCancel;
@@ -190,7 +188,7 @@ type
     constructor Create( Name : string = 'WorkerMgr' );
     destructor Destroy; override;
 
-    function AllocWorker( AutoFree : LongBool; Name : string = 'Worker';
+    function AllocWorker( FreeOnDone : LongBool; Name : string = 'Worker';
       Tag : Integer = 0 ) : TWorker;
     procedure FreeWorker( Worker : TWorker );
   end;
@@ -218,26 +216,30 @@ end;
 
 procedure TWorker.NeedCancel( Cancel : PLongBool );
 begin
-  FOwner.SendProcessMessage( WM_WORKER_NEED_CANCEL, NativeUInt( Self ),
-    NativeUInt( Cancel ) );
+  if Assigned( FOnNeedCancel ) then
+    FOwner.SendProcessMessage( WM_WORKER_NEED_CANCEL, NativeUInt( Self ),
+      NativeUInt( Cancel ) );
 end;
 
 procedure TWorker.NeedSuspend( Suspend : PLongBool );
 begin
-  FOwner.SendProcessMessage( WM_WORKER_NEED_SUSPEND, NativeUInt( Self ),
-    NativeUInt( Suspend ) );
+  if Assigned( FOnNeedSuspend ) then
+    FOwner.SendProcessMessage( WM_WORKER_NEED_SUSPEND, NativeUInt( Self ),
+      NativeUInt( Suspend ) );
 end;
 
-procedure TWorker.FeedbackData( Data : TObject );
+procedure TWorker.Data( Data : TObject );
 begin
-  FOwner.SendProcessMessage( WM_WORKER_FEEDBACK_DATA, NativeUInt( Self ),
-    NativeUInt( Data ) )
+  if Assigned( FOnData ) then
+    FOwner.SendProcessMessage( WM_WORKER_FEEDBACK_DATA, NativeUInt( Self ),
+      NativeUInt( Data ) )
 end;
 
-procedure TWorker.FeedbackProgress( Perent : Integer );
+procedure TWorker.Progress( Perent : Integer );
 begin
-  FOwner.SendProcessMessage( WM_WORKER_FEEDBACK_PROGRESS, NativeUInt( Self ),
-    NativeUInt( Perent ) )
+  if Assigned( FOnProgress ) then
+    FOwner.SendProcessMessage( WM_WORKER_FEEDBACK_PROGRESS, NativeUInt( Self ),
+      NativeUInt( Perent ) )
 end;
 
 procedure TWorker.Started;
@@ -245,29 +247,32 @@ begin
   FCancelPending := FALSE;
   FSuspendPending := FALSE;
 
-  FOwner.PostProcessMessage( WM_WORKER_STARTED, NativeUInt( Self ),
-    NativeUInt( 0 ) )
+  if Assigned( FOnStart ) then
+    FOwner.PostProcessMessage( WM_WORKER_STARTED, NativeUInt( Self ),
+      NativeUInt( 0 ) )
 end;
 
 procedure TWorker.Resumed;
 begin
-  FOwner.PostProcessMessage( WM_WORKER_RESUMED, NativeUInt( Self ),
-    NativeUInt( 0 ) )
+  if Assigned( FOnResume ) then
+    FOwner.PostProcessMessage( WM_WORKER_RESUMED, NativeUInt( Self ),
+      NativeUInt( 0 ) )
 end;
 
 procedure TWorker.Suspended( );
 begin
-  FOwner.PostProcessMessage( WM_WORKER_SUSPENDED, NativeUInt( Self ),
-    NativeUInt( 0 ) )
+  if Assigned( FOnSuspend ) then
+    FOwner.PostProcessMessage( WM_WORKER_SUSPENDED, NativeUInt( Self ),
+      NativeUInt( 0 ) )
 end;
 
-procedure TWorker.Finished( Status : TWorkerStatus );
+procedure TWorker.Done( Status : TWorkerStatus );
 begin
   FCancelPending := FALSE;
   FSuspendPending := FALSE;
 
   FOwner.SendProcessMessage( WM_WORKER_FINISHED, NativeUInt( Self ),
-    NativeUInt( Status ) )
+    NativeUInt( Status ) );
 end;
 
 procedure TWorker.Suspend;
@@ -355,7 +360,7 @@ begin
             // wsCanceled, wsSuccessed, wscFailed
             Status := FProc( Self, FParam );
 
-            Finished( Status );
+            Done( Status );
           end;
 
         WAIT_ABANDONED_0 .. WAIT_ABANDONED_0 + 1 :
@@ -448,24 +453,24 @@ begin
   inherited Destroy;
 end;
 
-procedure TWorker.DoFeedbackData( Data : TObject );
+procedure TWorker.DoData( Data : TObject );
 begin
-  if Assigned( FOnFeedbackData ) then
-    FOnFeedbackData( Self, Data );
+  if Assigned( FOnData ) then
+    FOnData( Self, Data );
 end;
 
-procedure TWorker.DoFeedbackProgress( Progress : Integer );
+procedure TWorker.DoProgress( Progress : Integer );
 begin
-  if Assigned( FOnFeedbackProgress ) then
-    FOnFeedbackProgress( Self, Progress );
+  if Assigned( FOnProgress ) then
+    FOnProgress( Self, Progress );
 end;
 
-procedure TWorker.DoFinished( Status : TWorkerStatus );
+procedure TWorker.DoDone( Status : TWorkerStatus );
 begin
-  if Assigned( FOnFinish ) then
-    FOnFinish( Self, Status );
+  if Assigned( FOnDone ) then
+    FOnDone( Self, Status );
 
-  if Self.FAutoFree then
+  if Self.FFreeOnDone then
     FOwner.FreeWorker( Self );
 end;
 
@@ -513,24 +518,24 @@ begin
   FThreadWindow := AllocateHWnd( ThreadWndMethod );
 end;
 
-function TWorkerMgr.AllocWorker( AutoFree : LongBool; Name : string;
+function TWorkerMgr.AllocWorker( FreeOnDone : LongBool; Name : string;
   Tag : Integer ) : TWorker;
 var
   I : Integer;
-  FreeWorkerFound : LongBool;
+  UnallocedWorkerFound : LongBool;
 begin
-  FreeWorkerFound := FALSE;
+  UnallocedWorkerFound := FALSE;
   for I := 0 to FWorkerList.LockList.Count - 1 do
   begin
     Result := FWorkerList.LockList[ I ];
     if not Result.FAlloced then
     begin
-      FreeWorkerFound := TRUE;
+      UnallocedWorkerFound := TRUE;
       Break;
     end;
   end;
 
-  if not FreeWorkerFound then
+  if not UnallocedWorkerFound then
   begin
     if FWorkerList.LockList.Count = 32 then
       raise EWorkerMgr.Create( 'Can not create worker thread.' );
@@ -544,19 +549,18 @@ begin
 
   Result.Name := name;
   Result.Tag := Tag;
-  Result.FAutoFree := AutoFree;
+  Result.FFreeOnDone := FreeOnDone;
 
   Result.OnStart := nil;
   Result.OnSuspend := nil;
   Result.OnResume := nil;
-  Result.OnFinish := nil;
-  Result.OnTerminate := nil;
+  Result.OnDone := nil;
+
+  Result.OnProgress := nil;
+  Result.OnData := nil;
 
   Result.OnNeedCancel := nil;
   Result.OnNeedSuspend := nil;
-
-  Result.OnFeedbackProgress := nil;
-  Result.OnFeedbackData := nil;
 end;
 
 procedure TWorkerMgr.FreeWorker( Worker : TWorker );
@@ -807,17 +811,17 @@ begin
 
     WM_WORKER_FEEDBACK_PROGRESS :
       begin
-        Worker.DoFeedbackProgress( Integer( Msg.LParam ) );
+        Worker.DoProgress( Integer( Msg.LParam ) );
       end;
 
     WM_WORKER_FEEDBACK_DATA :
       begin
-        Worker.DoFeedbackData( TObject( Msg.LParam ) );
+        Worker.DoData( TObject( Msg.LParam ) );
       end;
 
     WM_WORKER_FINISHED :
       begin
-        Worker.DoFinished( TWorkerStatus( Msg.LParam ) );
+        Worker.DoDone( TWorkerStatus( Msg.LParam ) );
       end;
 
     WM_WORKER_SUSPENDED :
