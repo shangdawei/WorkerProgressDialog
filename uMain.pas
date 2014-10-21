@@ -41,8 +41,9 @@ type
 
     procedure PrimeWorkNeedCancel( Sender : TWorker; NeedCancel : PLongBool );
 
-    procedure PrimeWorkData( Sender : TWorker; FeedValue : TObject );
-    procedure PrimeWorkProgress( Sender : TWorker; Progress : integer );
+    procedure PrimeWorkData( Sender : TWorker; FeedId : Integer;
+      FeedValue : TObject );
+    procedure PrimeWorkProgress( Sender : TWorker; Progress : Integer );
 
     procedure PrimeWorkFinished( Sender : TWorker;
       FinishedStatus : TWorkerStatus );
@@ -50,7 +51,7 @@ type
 
     procedure PrimeWorkFinished8X( Sender : TWorker;
       FinishedStatus : TWorkerStatus );
-    procedure PrimeWorkProgress8X( Sender : TWorker; Progress : integer );
+    procedure PrimeWorkProgress8X( Sender : TWorker; Progress : Integer );
   public
     { Public declarations }
   end;
@@ -94,13 +95,13 @@ end;
 
 function TfrmMain.PrimeWork( Sender : TWorker; Data : TObject ) : TWorkerStatus;
 var
-  N, M : integer;
+  N, M : Integer;
   IsPrime : Boolean;
-  PrimesFound : integer;
-  NumbersToCheck : integer;
-  Progress : integer;
+  PrimesFound : Integer;
+  NumbersToCheck : Integer;
+  Progress : Integer;
 begin
-  NumbersToCheck := integer( Data );
+  NumbersToCheck := Integer( Data );
   PrimesFound := 0;
 
   // Finding prime numbers using a very low tech approach
@@ -122,7 +123,7 @@ begin
     if IsPrime then
     begin
       Inc( PrimesFound );
-      Sender.Data( TObject( N ) );
+      Sender.Data( 0, TObject( N ) );
     end;
 
     Progress := MulDiv( N, 100, NumbersToCheck );
@@ -153,19 +154,20 @@ begin
   end;
 end;
 
-procedure TfrmMain.PrimeWorkData( Sender : TWorker; FeedValue : TObject );
+procedure TfrmMain.PrimeWorkData( Sender : TWorker; FeedId : Integer;
+  FeedValue : TObject );
 begin
-  edtPrime.Text := IntToStr( integer( FeedValue ) );
+  edtPrime.Text := IntToStr( Integer( FeedValue ) );
   edtPrime.Update;
 end;
 
-procedure TfrmMain.PrimeWorkProgress( Sender : TWorker; Progress : integer );
+procedure TfrmMain.PrimeWorkProgress( Sender : TWorker; Progress : Integer );
 begin
   ProgressBar1.Position := Progress;
   ProgressBar1.Update;
 end;
 
-procedure TfrmMain.PrimeWorkProgress8X( Sender : TWorker; Progress : integer );
+procedure TfrmMain.PrimeWorkProgress8X( Sender : TWorker; Progress : Integer );
 begin
   if Sender.Tag < 8 then
   begin
@@ -188,7 +190,7 @@ begin
 end;
 
 var
-  globalTimer : integer;
+  globalTimer : Integer;
 
 procedure TfrmMain.Timer1Timer( Sender : TObject );
 begin
@@ -205,7 +207,7 @@ end;
 
 procedure TfrmMain.btnStartClick( Sender : TObject );
 var
-  MaxNum : integer;
+  MaxNum : Integer;
 begin
   Label1.Caption := 'Executing ...';
   Self.Update;
@@ -222,8 +224,8 @@ end;
 
 procedure TfrmMain.btnCancelAllClick( Sender : TObject );
 var
-  I : integer;
-  ThreadNum : integer;
+  I : Integer;
+  ThreadNum : Integer;
 begin
   ThreadNum := StrToInt( edtThreadNum.Text );
   for I := 0 to ThreadNum - 1 do
@@ -235,9 +237,9 @@ end;
 
 procedure TfrmMain.btnStartAllClick( Sender : TObject );
 var
-  ThreadNum : integer;
-  MaxNum : integer;
-  I : integer;
+  ThreadNum : Integer;
+  MaxNum : Integer;
+  I : Integer;
 begin
   MaxNum := StrToInt( edtMaxNum.Text );
   ThreadNum := StrToInt( edtThreadNum.Text );

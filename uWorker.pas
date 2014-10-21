@@ -19,11 +19,11 @@ const
   WM_WORKER_NEED_SUSPEND = WM_USER + 108;
 
 type
-  TWorkerStatus = ( wsCanceled, wsSuccessed, wscFailed );
-  TWorkerEvent = ( weTerminate, weStart, weResume, weMgrResume );
+  TWorkerStatus = ( wsCanceled, wsSuccessed, wsFailed );
+  // TWorkerEvent = ( weTerminate, weStart, weResume, weDone );
 
 const
-  WorkerStatusText : array [ wsCanceled .. wscFailed ] of string = ( 'Canceled',
+  WorkerStatusText : array [ wsCanceled .. wsFailed ] of string = ( 'Canceled',
     'Successed', 'Failed' );
 
 type
@@ -34,7 +34,15 @@ type
   TWorkerProc = function( Worker : TWorker; Param : TObject )
     : TWorkerStatus of object;
 
-  TWorkerDataEvent = procedure( Sender : TWorker; Data : TObject ) of object;
+  PWorkerDataRec = ^TWorkerDataRec;
+
+  TWorkerDataRec = record
+    Id : Integer;
+    Data : TObject;
+  end;
+
+  TWorkerDataEvent = procedure( Sender : TWorker; Id : Integer; Data : TObject )
+    of object;
 
   TWorkerProgressEvent = procedure( Sender : TWorker; Progress : Integer )
     of object;
@@ -77,15 +85,17 @@ type
     FOnResume : TWorkerStateEvent;
     FOnDone : TWorkerDoneEvent;
 
-    // Start, Exit, Resume, MgrResume
-    FEvents : array [ weTerminate .. weMgrResume ] of THandle;
+    FTerminateEvent : THandle;
+    FStartEvent : THandle;
+    FResumeEvent : THandle;
+    FDoneEvent : THandle;
 
     procedure AfterConstruction; override;
 
   protected
     procedure Execute; override;
 
-    procedure DoData( Data : TObject );
+    procedure DoData( WorkerDataRec : PWorkerDataRec );
     procedure DoProgress( Progress : Integer );
 
     procedure DoStarted( );
@@ -119,11 +129,13 @@ type
     procedure NeedSuspend( Suspend : PLongBool );
 
     procedure Progress( Perent : Integer );
-    procedure Data( Data : TObject );
+    procedure Data( Id : Integer; Data : TObject );
 
     // For Main Thread
     property name : string read FName write FName;
     property Tag : Integer read FTag write FTag default 0;
+    property Executing : LongBool read FExecuting;
+    property Working : LongBool read FWorking;
 
     property OnStart : TWorkerStateEvent read FOnStart write FOnStart;
     property OnSuspend : TWorkerStateEvent read FOnSuspend write FOnSuspend;
@@ -145,7 +157,7 @@ type
   TWorkerMgr = class( TThread )
   private
     FName : string;
-    FCreated : boolean;
+    FCreated : Boolean;
 
     FThreadWindow : HWND;
     FProcessWindow : HWND;
@@ -188,10 +200,13 @@ type
     constructor Create( Name : string = 'WorkerMgr' );
     destructor Destroy; override;
 
-    function AllocWorker( FreeOnDone : LongBool; Name : string = 'Worker';
-      Tag : Integer = 0 ) : TWorker;
+    function AllocWorker( FreeOnDone : LongBool = True;
+      Name : string = 'Worker'; Tag : Integer = 0 ) : TWorker;
     procedure FreeWorker( Worker : TWorker );
   end;
+
+var
+  WorkerMgr : TWorkerMgr;
 
 implementation
 
@@ -228,11 +243,21 @@ begin
       NativeUInt( Suspend ) );
 end;
 
-procedure TWorker.Data( Data : TObject );
+procedure TWorker.Data( Id : Integer; Data : TObject );
+var
+  WorkerDataRec : PWorkerDataRec;
 begin
   if Assigned( FOnData ) then
+  begin
+    New( WorkerDataRec );
+
+    WorkerDataRec.Id := Id;
+    WorkerDataRec.Data := Data;
     FOwner.SendProcessMessage( WM_WORKER_FEEDBACK_DATA, NativeUInt( Self ),
-      NativeUInt( Data ) )
+      NativeUInt( WorkerDataRec ) );
+
+    Dispose( WorkerDataRec );
+  end;
 end;
 
 procedure TWorker.Progress( Perent : Integer );
@@ -273,26 +298,47 @@ begin
 
   FOwner.SendProcessMessage( WM_WORKER_FINISHED, NativeUInt( Self ),
     NativeUInt( Status ) );
+
+  if FDoneEvent <> 0 then
+    SetEvent( FDoneEvent );
 end;
 
 procedure TWorker.Suspend;
 begin
   if FWorking and not FSuspended then
-    FSuspendPending := TRUE;
+    FSuspendPending := True;
 end;
 
 procedure TWorker.Resume;
 begin
   if FWorking and FSuspended then
-    SetEvent( FEvents[ weResume ] );
+    SetEvent( FResumeEvent );
 end;
 
 procedure TWorker.Cancel;
+var
+  Wait : DWORD;
 begin
   if FWorking then
   begin
-    FCancelPending := TRUE;
+    FCancelPending := True;
     Resume;
+
+    FDoneEvent := CreateEvent( nil, True, FALSE, '' );
+
+    while True do
+    begin
+      Wait := MsgWaitForMultipleObjects( 1, FDoneEvent, FALSE, INFINITE,
+        QS_ALLINPUT );
+
+      if Wait = WAIT_OBJECT_0 then
+      begin
+        ResetEvent( FDoneEvent );
+        CloseHandle( FDoneEvent );
+        Exit;
+      end;
+      Application.ProcessMessages
+    end;
   end;
 end;
 
@@ -303,7 +349,7 @@ begin
   while not FExecuting do
     Yield;
 
-  SetEvent( Self.FEvents[ weStart ] );
+  SetEvent( Self.FStartEvent );
 end;
 
 constructor TWorker.Create( Owner : TWorkerMgr; Name : string; Tag : Integer );
@@ -327,20 +373,21 @@ procedure TWorker.Execute;
 var
   Wait : DWORD;
   Status : TWorkerStatus;
+  FEvents : array [ 0 .. 1 ] of THandle;
 begin
   NameThreadForDebugging( FName );
 
-  FEvents[ weStart ] := CreateEvent( nil, TRUE, FALSE, '' );
-  FEvents[ weTerminate ] := CreateEvent( nil, TRUE, FALSE, '' );
+  FTerminateEvent := CreateEvent( nil, True, FALSE, '' );
+  FStartEvent := CreateEvent( nil, True, FALSE, '' );
+  FEvents[ 0 ] := FTerminateEvent;
+  FEvents[ 1 ] := FStartEvent;
 
-  FExecuting := TRUE;
+  FWorking := FALSE;
+  FExecuting := True;
 
   try
-
     while not Terminated do
     begin
-
-      FWorking := FALSE;
       Wait := WaitForMultipleObjects( 2, @FEvents, FALSE, INFINITE );
       // If more than one object became signaled during the call,
       // this is the array index of the signaled object
@@ -349,18 +396,16 @@ begin
         WAIT_OBJECT_0 .. WAIT_OBJECT_0 + 1 :
           if WAIT_OBJECT_0 = Wait then // weTerminate
           begin
-            ResetEvent( FEvents[ weTerminate ] );
+            ResetEvent( FTerminateEvent );
             Exit;
           end else begin
-            ResetEvent( FEvents[ weStart ] );
-            FWorking := TRUE;
+            ResetEvent( FStartEvent );
 
+            FWorking := True;
             Started( );
-
-            // wsCanceled, wsSuccessed, wscFailed
             Status := FProc( Self, FParam );
-
-            Done( Status );
+            Done( Status ); // wsCanceled, wsSuccessed, wscFailed
+            FWorking := FALSE;
           end;
 
         WAIT_ABANDONED_0 .. WAIT_ABANDONED_0 + 1 :
@@ -391,11 +436,13 @@ begin
     end;
 
   finally
-    if FEvents[ weTerminate ] <> 0 then
-      CloseHandle( FEvents[ weTerminate ] );
+    if FTerminateEvent <> 0 then
+      CloseHandle( FTerminateEvent );
 
-    if FEvents[ weStart ] <> 0 then
-      CloseHandle( FEvents[ weStart ] );
+    if FStartEvent <> 0 then
+      CloseHandle( FStartEvent );
+
+    FExecuting := FALSE;
   end;
 end;
 
@@ -415,11 +462,13 @@ begin
   if Result then
   begin
     FSuspendPending := FALSE;
-    FSuspended := TRUE;
+    FSuspended := True;
     Suspended( );
 
-    WaitForSingleObject( FEvents[ weResume ], INFINITE );
-    ResetEvent( FEvents[ weResume ] );
+    FResumeEvent := CreateEvent( nil, True, FALSE, '' );
+    WaitForSingleObject( FResumeEvent, INFINITE );
+    ResetEvent( FResumeEvent );
+    CloseHandle( FResumeEvent );
 
     FSuspended := FALSE;
     Resumed( );
@@ -441,10 +490,9 @@ destructor TWorker.Destroy;
 begin
   if FExecuting then
   begin
-    FExecuting := FALSE;
     if not FWorking then // Wait for StartEvent or ExitEvent
     begin
-      SetEvent( FEvents[ weTerminate ] );
+      SetEvent( FTerminateEvent );
     end else begin
       Cancel;
     end;
@@ -453,10 +501,12 @@ begin
   inherited Destroy;
 end;
 
-procedure TWorker.DoData( Data : TObject );
+procedure TWorker.DoData( WorkerDataRec : PWorkerDataRec );
 begin
   if Assigned( FOnData ) then
-    FOnData( Self, Data );
+  begin
+    FOnData( Self, WorkerDataRec.Id, WorkerDataRec.Data );
+  end;
 end;
 
 procedure TWorker.DoProgress( Progress : Integer );
@@ -530,7 +580,7 @@ begin
     Result := FWorkerList.LockList[ I ];
     if not Result.FAlloced then
     begin
-      UnallocedWorkerFound := TRUE;
+      UnallocedWorkerFound := True;
       Break;
     end;
   end;
@@ -545,7 +595,7 @@ begin
     FWorkerList.Add( Result );
   end;
 
-  Result.FAlloced := TRUE;
+  Result.FAlloced := True;
 
   Result.Name := name;
   Result.Tag := Tag;
@@ -572,6 +622,7 @@ begin
     if Worker = FWorkerList.LockList[ I ] then
     begin
       Worker.FAlloced := FALSE;
+      Worker := nil;
       Exit;
     end;
   end;
@@ -587,10 +638,10 @@ end;
 
 procedure TWorkerMgr.ThreadWndMethod( var Msg : TMessage );
 var
-  Handled : boolean;
+  Handled : Boolean;
   Worker : TWorker;
 begin
-  Handled := TRUE; // Assume we handle message
+  Handled := True; // Assume we handle message
 
   Worker := TWorker( Msg.WParam );
 
@@ -645,7 +696,7 @@ end;
 constructor TWorkerMgr.Create( Name : string );
 begin
   FName := name;
-  FReadyEvent := CreateEvent( nil, TRUE, FALSE, '' );
+  FReadyEvent := CreateEvent( nil, True, FALSE, '' );
   inherited Create( FALSE );
 
   { Create hidden window here: store handle in FProcessWindow
@@ -708,7 +759,7 @@ begin
     if FThreadWindow = 0 then
       raise EWorkerMgr.Create( 'Can not create worker manager window.' );
 
-    FCreated := TRUE;
+    FCreated := True;
 
     try
       while not Terminated do
@@ -790,10 +841,10 @@ end;
 
 procedure TWorkerMgr.ProcessWndMethod( var Msg : TMessage );
 var
-  Handled : boolean;
+  Handled : Boolean;
   Worker : TWorker;
 begin
-  Handled := TRUE; // Assume we handle message
+  Handled := True; // Assume we handle message
 
   Worker := TWorker( Msg.WParam );
 
@@ -816,7 +867,7 @@ begin
 
     WM_WORKER_FEEDBACK_DATA :
       begin
-        Worker.DoData( TObject( Msg.LParam ) );
+        Worker.DoData( PWorkerDataRec( Msg.LParam ) );
       end;
 
     WM_WORKER_FINISHED :
@@ -864,5 +915,13 @@ procedure TWorkerMgr.ProcessWndMessageEx( var Msg : TMessage );
 begin
 
 end;
+
+initialization
+
+WorkerMgr := TWorkerMgr.Create( );
+
+finalization
+
+WorkerMgr.Free;
 
 end.
