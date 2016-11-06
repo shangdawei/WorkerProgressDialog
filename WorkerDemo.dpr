@@ -3,7 +3,8 @@ program WorkerDemo;
 uses
   Vcl.Forms,
   uMain in 'uMain.pas' {frmMain},
-  uWorker in 'uWorker.pas';
+  uWorker in 'uWorker.pas',
+  uProgressDialog in 'uProgressDialog.pas' {ProgressDialog};
 
 {$R *.res}
 
